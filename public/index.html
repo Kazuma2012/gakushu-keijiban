@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ホーム</title>
+   <link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/1/19/Google_Classroom_Logo.svg" /> 
+</head>
+<body>
+  <h1>学習交流</h1>
+
+  <form id="postForm">
+    タイトル: <input type="text" id="title"><br>
+    名前: <input type="text" id="author"><br>
+    カテゴリ: 
+    <select id="category">
+      <option value="プログラミング">プログラミング</option>
+      <option value="数学">数学</option>
+      <option value="英語">英語</option>
+    </select><br>
+    内容: <textarea id="content"></textarea><br>
+    <button type="submit">投稿</button>
+  </form>
+
+  <ul id="posts"></ul>
+
+  <script src="script.js"></script>
+</body>
+</html>
