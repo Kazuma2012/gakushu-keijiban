@@ -1,21 +1,23 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Low } = require('lowdb');
-const { JSONFile } = require('lowdb/node');  // ← ここがポイント！
+const { JSONFile } = require('lowdb/node');  // lowdb v6対応
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// DB初期化
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
 async function initDB() {
   await db.read();
-  db.data ||= { posts: [] };
+  db.data = db.data || { posts: [] };  // 初期データを設定
   await db.write();
 }
 initDB();
 
+// ミドルウェア
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
@@ -65,4 +67,5 @@ app.post('/posts/:postId/comments', async (req, res) => {
   res.json({ success: true });
 });
 
+// サーバー起動
 app.listen(port, () => console.log(`学習掲示板(コメント対応)動作中: ${port}`));
