@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { Low, JSONFile } = require('lowdb');
+const { Low } = require('lowdb');
+const { JSONFile } = require('lowdb/node');  // ← ここがポイント！
 
 const app = express();
 const port = process.env.PORT || 3000;
