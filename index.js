@@ -8,11 +8,13 @@ const port = process.env.PORT || 3000;
 
 // DB初期化
 const adapter = new JSONFile('db.json');
-const db = new Low(adapter);
+// 初期値を渡す
+const db = new Low(adapter, { posts: [] });
 
 async function initDB() {
   await db.read();
-  db.data = db.data || { posts: [] };  // 初期データを設定
+  // db.data が null の場合は初期値を設定
+  db.data = db.data || { posts: [] };
   await db.write();
 }
 initDB();
