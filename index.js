@@ -74,7 +74,6 @@ app.listen(port, () => console.log(`学習掲示板(コメント対応)動作中
 
 // 管理画面（/kanri）
 app.get('/kanri', async (req, res) => {
-  // 管理画面用HTML
   const html = `
   <html>
   <head>
@@ -100,15 +99,18 @@ app.get('/kanri', async (req, res) => {
     </div>
 
     <script>
-      async function login() {
+      let currentKey = '';
+
+      function login() {
         const key = document.getElementById('keyInput').value;
         if(key !== 'kazuma123'){ alert('キーが違います'); return; }
+        currentKey = key;               // ここでキーを保存
         document.getElementById('login').classList.add('hidden');
-        loadData(key);
+        loadData();
       }
 
-      async function loadData(key) {
-        const res = await fetch('/kanri/data?key=' + key);
+      async function loadData() {
+        const res = await fetch('/kanri/data?key=' + currentKey);
         const posts = await res.json();
         const content = document.getElementById('content');
         content.classList.remove('hidden');
@@ -120,33 +122,37 @@ app.get('/kanri', async (req, res) => {
           div.innerHTML = \`
             <h3>\${p.title} [\${p.category}]</h3>
             <p>投稿者: \${p.author} | 投稿日: \${p.created_at}</p>
-            <button onclick="deletePost(\${p.id}, key)">投稿削除</button>
+            <button id="delete-post-\${p.id}">投稿削除</button>
             <h4>コメント一覧:</h4>
             <ul id="comments-\${p.id}"></ul>
           \`;
           content.appendChild(div);
+
+          // 投稿削除ボタンにイベント
+          div.querySelector('#delete-post-' + p.id).onclick = () => deletePost(p.id);
 
           const ul = div.querySelector('ul');
           p.comments.forEach(c => {
             const li = document.createElement('li');
             li.className = 'comment';
             li.innerHTML = \`
-              \${c.author}: \${c.content}
-              <button onclick="deleteComment(\${p.id}, \${c.id}, key)">削除</button>
+              \${c.author}: \${c.content} <button id="delete-comment-\${p.id}-\${c.id}">削除</button>
             \`;
             ul.appendChild(li);
+
+            li.querySelector('#delete-comment-' + p.id + '-' + c.id).onclick = () => deleteComment(p.id, c.id);
           });
         });
       }
 
-      async function deletePost(postId, key) {
-        await fetch('/kanri/delete-post/' + postId + '?key=' + key, {method:'POST'});
-        loadData(key);
+      async function deletePost(postId) {
+        await fetch('/kanri/delete-post/' + postId + '?key=' + currentKey, {method:'POST'});
+        loadData();
       }
 
-      async function deleteComment(postId, commentId, key) {
-        await fetch('/kanri/delete-comment/' + postId + '/' + commentId + '?key=' + key, {method:'POST'});
-        loadData(key);
+      async function deleteComment(postId, commentId) {
+        await fetch('/kanri/delete-comment/' + postId + '/' + commentId + '?key=' + currentKey, {method:'POST'});
+        loadData();
       }
     </script>
   </body>
@@ -191,4 +197,3 @@ app.post('/kanri/delete-comment/:postId/:commentId', async (req,res)=>{
   }
   res.send('ok');
 });
-
