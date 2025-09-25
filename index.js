@@ -1,195 +1,158 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Low } = require('lowdb');
-const { JSONFile } = require('lowdb/node');  // lowdb v6対応
+const { JSONFile } = require('lowdb/node');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// DB初期化
 const adapter = new JSONFile('db.json');
-// 初期値を渡す
-const db = new Low(adapter, { posts: [] });
+const db = new Low(adapter);
 
-async function initDB() {
+async function initDB(){
   await db.read();
-  // db.data が null の場合は初期値を設定
-  db.data = db.data || { posts: [] };
+  db.data ||= {
+    posts: [],
+    users: [{ id:1, username:'admin', password:'admin123', role:'admin' }]
+  };
   await db.write();
 }
 initDB();
 
-// ミドルウェア
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// 投稿一覧取得
-app.get('/posts', async (req, res) => {
+// -------------------- 投稿・コメント API --------------------
+
+// 投稿一覧
+app.get('/posts', async (req,res)=>{
   await db.read();
   const category = req.query.category;
   let posts = db.data.posts;
-  if(category) posts = posts.filter(p => p.category === category);
+  if(category) posts = posts.filter(p=>p.category===category);
   res.json(posts);
 });
 
 // 投稿作成
-app.post('/posts', async (req, res) => {
+app.post('/posts', async (req,res)=>{
   const { title, author, content, category } = req.body;
   await db.read();
   db.data.posts.push({
     id: Date.now(),
-    title,
-    author,
-    content,
-    category,
+    title, author, content, category,
     comments: [],
-    likes: 0,
-    solved: false,
-    created_at: new Date().toISOString()
+    likes:0,
+    solved:false,
+    created_at:new Date().toISOString()
   });
   await db.write();
-  res.json({ success: true });
+  res.json({ success:true });
 });
 
 // コメント作成
-app.post('/posts/:postId/comments', async (req, res) => {
+app.post('/posts/:postId/comments', async (req,res)=>{
   const postId = Number(req.params.postId);
   const { author, content } = req.body;
-
   await db.read();
-  const post = db.data.posts.find(p => p.id === postId);
-  if(!post) return res.status(404).json({ error: "投稿が見つかりません" });
-
-  post.comments.push({
-    id: Date.now(),
-    author,
-    content
-  });
+  const post = db.data.posts.find(p=>p.id===postId);
+  if(!post) return res.status(404).json({ error:'投稿が見つかりません' });
+  post.comments.push({ id: Date.now(), author, content });
   await db.write();
-  res.json({ success: true });
+  res.json({ success:true });
 });
 
-// サーバー起動
-app.listen(port, () => console.log(`学習掲示板(コメント対応)動作中: ${port}`));
+// -------------------- 管理者ログイン・ユーザー管理 --------------------
 
-// 管理画面（/kanri）
-app.get('/kanri', async (req, res) => {
-  const html = `
-  <html>
-  <head>
-    <title>管理画面</title>
-    <style>
-      body { font-family: Arial; padding: 20px; }
-      .hidden { display:none; }
-      .post { border:1px solid #ccc; padding:10px; margin-bottom:10px; border-radius:5px; }
-      .post h3 { margin:0; }
-      .comment { margin-left:20px; }
-      button { margin-left:5px; }
-    </style>
-  </head>
-  <body>
-    <h1>管理画面</h1>
-    <div id="login">
-      <p>管理キーを入力してください:</p>
-      <input type="password" id="keyInput">
-      <button onclick="login()">ログイン</button>
-    </div>
-    <div id="content" class="hidden">
-      <p>データ読み込み中…</p>
-    </div>
-
-    <script>
-      let currentKey = '';
-
-      function login() {
-        const key = document.getElementById('keyInput').value;
-        if(key !== 'kazuma123'){ alert('キーが違います'); return; }
-        currentKey = key;               // ここでキーを保存
-        document.getElementById('login').classList.add('hidden');
-        loadData();
-      }
-
-      async function loadData() {
-        const res = await fetch('/kanri/data?key=' + currentKey);
-        const posts = await res.json();
-        const content = document.getElementById('content');
-        content.classList.remove('hidden');
-        content.innerHTML = '';
-
-        posts.forEach(p => {
-          const div = document.createElement('div');
-          div.className = 'post';
-          div.innerHTML = \`
-            <h3>\${p.title} [\${p.category}]</h3>
-            <p>投稿者: \${p.author} | 投稿日: \${p.created_at}</p>
-            <button id="delete-post-\${p.id}">投稿削除</button>
-            <h4>コメント一覧:</h4>
-            <ul id="comments-\${p.id}"></ul>
-          \`;
-          content.appendChild(div);
-
-          // 投稿削除ボタンにイベント
-          div.querySelector('#delete-post-' + p.id).onclick = () => deletePost(p.id);
-
-          const ul = div.querySelector('ul');
-          p.comments.forEach(c => {
-            const li = document.createElement('li');
-            li.className = 'comment';
-            li.innerHTML = \`
-              \${c.author}: \${c.content} <button id="delete-comment-\${p.id}-\${c.id}">削除</button>
-            \`;
-            ul.appendChild(li);
-
-            li.querySelector('#delete-comment-' + p.id + '-' + c.id).onclick = () => deleteComment(p.id, c.id);
-          });
-        });
-      }
-
-      async function deletePost(postId) {
-        await fetch('/kanri/delete-post/' + postId + '?key=' + currentKey, {method:'POST'});
-        loadData();
-      }
-
-      async function deleteComment(postId, commentId) {
-        await fetch('/kanri/delete-comment/' + postId + '/' + commentId + '?key=' + currentKey, {method:'POST'});
-        loadData();
-      }
-    </script>
-  </body>
-  </html>
-  `;
-  res.send(html);
-});
-
-// データ取得
-app.get('/kanri/data', async (req,res)=>{
-  const key = req.query.key;
-  if(key !== 'kazuma123') return res.status(403).send('アクセス拒否');
-
+// 管理者ログイン
+app.post('/kanri/login', async (req,res)=>{
+  const { username, password } = req.body;
   await db.read();
+  const user = db.data.users.find(u=>u.username===username && u.password===password && u.role==='admin');
+  if(!user) return res.status(403).json({ error:'ログイン失敗' });
+  res.json({ success:true, userId:user.id });
+});
+
+// 新規ユーザー作成
+app.post('/kanri/create-user', async (req,res)=>{
+  const { username, password, role, adminId } = req.body;
+  await db.read();
+  const admin = db.data.users.find(u=>u.id==adminId);
+  if(!admin || admin.role!=='admin') return res.status(403).json({ error:'アクセス拒否' });
+
+  const newUser = { id:Date.now(), username, password, role };
+  db.data.users.push(newUser);
+  await db.write();
+  res.json({ success:true, user:newUser });
+});
+
+// ユーザー一覧
+app.get('/kanri/users', async (req,res)=>{
+  const { userId } = req.query;
+  await db.read();
+  const admin = db.data.users.find(u=>u.id==userId);
+  if(!admin || admin.role!=='admin') return res.status(403).send('アクセス拒否');
+
+  res.json(db.data.users);
+});
+
+// ユーザー削除
+app.post('/kanri/delete-user/:targetId', async (req,res)=>{
+  const { userId } = req.query;
+  await db.read();
+  const admin = db.data.users.find(u=>u.id==userId);
+  if(!admin || admin.role!=='admin') return res.status(403).send('アクセス拒否');
+
+  const targetId = Number(req.params.targetId);
+  db.data.users = db.data.users.filter(u=>u.id!==targetId);
+  await db.write();
+  res.send('ok');
+});
+
+// 権限変更
+app.post('/kanri/update-role/:targetId', async (req,res)=>{
+  const { userId, newRole } = req.body;
+  await db.read();
+  const admin = db.data.users.find(u=>u.id==userId);
+  if(!admin || admin.role!=='admin') return res.status(403).send('アクセス拒否');
+
+  const targetId = Number(req.params.targetId);
+  const user = db.data.users.find(u=>u.id===targetId);
+  if(user){
+    user.role = newRole;
+    await db.write();
+  }
+  res.json({ success:true, user });
+});
+
+// -------------------- 投稿・コメント管理（adminのみ） --------------------
+app.get('/kanri/data', async (req,res)=>{
+  const { userId } = req.query;
+  await db.read();
+  const user = db.data.users.find(u=>u.id==userId);
+  if(!user || user.role!=='admin') return res.status(403).send('アクセス拒否');
   res.json(db.data.posts);
 });
 
-// 投稿削除
 app.post('/kanri/delete-post/:postId', async (req,res)=>{
-  const key = req.query.key;
-  if(key !== 'kazuma123') return res.status(403).send('アクセス拒否');
+  const { userId } = req.query;
+  await db.read();
+  const user = db.data.users.find(u=>u.id==userId);
+  if(!user || user.role!=='admin') return res.status(403).send('アクセス拒否');
 
   const postId = Number(req.params.postId);
-  await db.read();
   db.data.posts = db.data.posts.filter(p=>p.id!==postId);
   await db.write();
   res.send('ok');
 });
 
-// コメント削除
 app.post('/kanri/delete-comment/:postId/:commentId', async (req,res)=>{
-  const key = req.query.key;
-  if(key !== 'kazuma123') return res.status(403).send('アクセス拒否');
+  const { userId } = req.query;
+  await db.read();
+  const user = db.data.users.find(u=>u.id==userId);
+  if(!user || user.role!=='admin') return res.status(403).send('アクセス拒否');
 
   const postId = Number(req.params.postId);
   const commentId = Number(req.params.commentId);
-  await db.read();
   const post = db.data.posts.find(p=>p.id===postId);
   if(post){
     post.comments = post.comments.filter(c=>c.id!==commentId);
@@ -197,3 +160,164 @@ app.post('/kanri/delete-comment/:postId/:commentId', async (req,res)=>{
   }
   res.send('ok');
 });
+
+// -------------------- 管理画面 HTML --------------------
+app.get('/kanri', (req,res)=>{
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>管理画面</title>
+    <style>
+      body { font-family: Arial; padding: 20px; }
+      .hidden { display:none; }
+      .post { border:1px solid #ccc; padding:10px; margin-bottom:10px; border-radius:5px; }
+      .comment { margin-left:20px; }
+      button { margin-left:5px; }
+    </style>
+  </head>
+  <body>
+    <h1>管理画面</h1>
+
+    <div id="loginSection">
+      <h3>管理者ログイン</h3>
+      <input id="username" placeholder="ユーザー名">
+      <input id="password" placeholder="パスワード" type="password">
+      <button onclick="login()">ログイン</button>
+    </div>
+
+    <div id="adminSection" class="hidden">
+      <h3>ユーザー作成</h3>
+      <input id="newUsername" placeholder="ユーザー名">
+      <input id="newPassword" placeholder="パスワード" type="password">
+      <select id="newRole">
+        <option value="admin">管理者</option>
+        <option value="user">一般</option>
+      </select>
+      <button onclick="createUser()">作成</button>
+
+      <h3>ユーザー一覧</h3>
+      <div id="usersContainer">読み込み中…</div>
+
+      <h3>投稿管理</h3>
+      <div id="postsContainer">読み込み中…</div>
+    </div>
+
+    <script>
+    let adminId = null;
+
+    async function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch('/kanri/login', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if(!data.success){ alert('ログイン失敗'); return; }
+      adminId = data.userId;
+      document.getElementById('loginSection').classList.add('hidden');
+      document.getElementById('adminSection').classList.remove('hidden');
+      loadUsers();
+      loadPosts();
+    }
+
+    async function createUser() {
+      const username = document.getElementById('newUsername').value;
+      const password = document.getElementById('newPassword').value;
+      const role = document.getElementById('newRole').value;
+
+      const res = await fetch('/kanri/create-user', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ username, password, role, adminId })
+      });
+      const data = await res.json();
+      if(data.success) alert('ユーザー作成成功: ' + data.user.username);
+      loadUsers();
+    }
+
+    async function loadUsers() {
+      const res = await fetch('/kanri/users?userId=' + adminId);
+      const users = await res.json();
+      const container = document.getElementById('usersContainer');
+      container.innerHTML = '';
+
+      users.forEach(u=>{
+        const div = document.createElement('div');
+        div.style.border='1px solid #ccc'; div.style.margin='3px'; div.style.padding='3px';
+        div.innerHTML = `
+          ID: ${u.id} | ${u.username} | 権限: 
+          <select id="role-${u.id}">
+            <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+            <option value="user" ${u.role==='user'?'selected':''}>user</option>
+          </select>
+          <button onclick="updateRole(${u.id})">変更</button>
+          <button onclick="deleteUser(${u.id})">削除</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function updateRole(targetId){
+      const newRole = document.getElementById('role-' + targetId).value;
+      await fetch('/kanri/update-role/' + targetId, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ userId: adminId, newRole })
+      });
+      alert('権限を変更しました');
+      loadUsers();
+    }
+
+    async function deleteUser(targetId){
+      if(!confirm('本当に削除しますか？')) return;
+      await fetch('/kanri/delete-user/' + targetId + '?userId=' + adminId, { method:'POST' });
+      loadUsers();
+    }
+
+    async function loadPosts() {
+      const res = await fetch('/kanri/data?userId=' + adminId);
+      const posts = await res.json();
+      const container = document.getElementById('postsContainer');
+      container.innerHTML = '';
+
+      posts.forEach(p=>{
+        const div = document.createElement('div');
+        div.className='post';
+        div.innerHTML = \`
+          <strong>\${p.title}</strong> by \${p.author} [\${p.category}]
+          <button onclick="deletePost(\${p.id})">投稿削除</button>
+          <ul id="comments-\${p.id}"></ul>
+        \`;
+        container.appendChild(div);
+        const ul = div.querySelector('ul');
+        p.comments.forEach(c=>{
+          const li = document.createElement('li');
+          li.className='comment';
+          li.innerHTML = \`\${c.author}: \${c.content} <button onclick="deleteComment(\${p.id},\${c.id})">削除</button>\`;
+          ul.appendChild(li);
+        });
+      });
+    }
+
+    async function deletePost(postId){
+      await fetch('/kanri/delete-post/' + postId + '?userId=' + adminId, {method:'POST'});
+      loadPosts();
+    }
+
+    async function deleteComment(postId, commentId){
+      await fetch('/kanri/delete-comment/' + postId + '/' + commentId + '?userId=' + adminId, {method:'POST'});
+      loadPosts();
+    }
+    </script>
+  </body>
+  </html>
+  `;
+  res.send(html);
+});
+
+// -------------------- サーバー起動 --------------------
+app.listen(port, ()=>console.log(`学習掲示板動作中: ${port}`));
